@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Realtime HUD Overlay</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      color: #f3f8fb;
+    }
+
+    .overlay {
+      width: 100%;
+      height: 100%;
+      padding: 12px;
+      display: grid;
+      align-items: start;
+    }
+
+    .hud {
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      background: rgba(9, 13, 17, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      backdrop-filter: blur(8px);
+    }
+
+    .title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: #9fb0ba;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+
+    .players {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .player {
+      min-width: 0;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 7px;
+      padding: 7px 6px;
+      text-align: center;
+      background: rgba(38, 50, 58, 0.8);
+    }
+
+    .player.dead {
+      background: rgba(104, 27, 34, 0.82);
+      border-color: rgba(255, 107, 107, 0.65);
+    }
+
+    .number { font-size: 12px; color: #b8c5cc; font-weight: 700; }
+    .state { margin-top: 2px; font-size: 13px; font-weight: 800; color: #49d39f; }
+    .dead .state { color: #ffd4d4; }
+  </style>
+</head>
+<body>
+  <div class="overlay">
+    <section class="hud">
+      <div class="title">
+        <span>Team 1</span>
+        <span id="summary">5 alive</span>
+      </div>
+      <div class="players" id="players"></div>
+    </section>
+  </div>
+
+  <script>
+    const playersEl = document.getElementById('players');
+    const summaryEl = document.getElementById('summary');
+
+    function render(payload = { team1AliveStatus: [true, true, true, true, true] }) {
+      const statuses = payload.team1AliveStatus || [true, true, true, true, true];
+      const aliveCount = statuses.filter(Boolean).length;
+      summaryEl.textContent = aliveCount + ' alive';
+      playersEl.innerHTML = '';
+
+      statuses.forEach((alive, index) => {
+        const item = document.createElement('div');
+        item.className = 'player' + (alive ? '' : ' dead');
+        item.innerHTML = `
+          <div class="number">P${index + 1}</div>
+          <div class="state">${alive ? 'Alive' : 'Dead'}</div>
+        `;
+        playersEl.appendChild(item);
+      });
+    }
+
+    render();
+    window.hudApi.onOverlayUpdate(render);
+  </script>
+</body>
+</html>
