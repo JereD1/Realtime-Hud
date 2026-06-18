@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Health Capture</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0e12;--bg2:#0a0b0f;--bg3:#111318;
+    --border:#1e2030;--border2:#252535;
+    --text:#e8eaf0;--text2:#888a9a;--text3:#44465a;
+    --blue:#3b6acf;--blue-dim:#162d6e;
+    --amber:#c88a00;--amber-dim:#4a3200;
+    --green:#22c55e;--red:#ef4444;--yellow:#eab308;
+    --orange:#f59946;
+    --r:8px;--rsm:5px;
+  }
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif;
+    font-size:13px;display:flex;flex-direction:column;overflow:hidden;-webkit-app-region:no-drag}
+
+  /* Titlebar */
+  .titlebar{height:38px;background:var(--bg2);border-bottom:0.5px solid var(--border);
+    display:flex;align-items:center;padding:0 14px 0 80px;gap:10px;flex-shrink:0;-webkit-app-region:drag}
+  .titlebar-title{font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--text3)}
+  .sdot{width:6px;height:6px;border-radius:50%;background:var(--text3);flex-shrink:0;transition:background .3s,box-shadow .3s}
+  .sdot.live{background:var(--green);box-shadow:0 0 6px #22c55e66}
+  .sdot.error{background:var(--red)}
+  .sdot.warn{background:var(--yellow)}
+  .tmpl-badge{font-size:9px;font-weight:600;padding:2px 8px;border-radius:10px;margin-left:auto;flex-shrink:0}
+  .tmpl-badge.ok{background:#163d28;color:var(--green)}
+  .tmpl-badge.err{background:#450a0a;color:var(--red)}
+
+  /* Layout */
+  .layout{display:flex;flex:1;overflow:hidden;min-height:0}
+
+  /* Sidebar */
+  .sidebar{width:210px;min-width:160px;flex-shrink:0;background:var(--bg2);
+    border-right:0.5px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+  .sb-hdr{padding:9px 12px;border-bottom:0.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+  .sb-label{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3)}
+  .src-list{flex:1;overflow-y:auto;padding:5px;display:flex;flex-direction:column;gap:3px}
+  .src-list::-webkit-scrollbar{width:3px}
+  .src-list::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+  .src-item{background:var(--bg3);border:1px solid var(--border);border-radius:var(--rsm);cursor:pointer;
+    display:flex;align-items:center;gap:7px;padding:5px 7px;transition:border-color .15s;flex-shrink:0;position:relative}
+  .src-item:hover{border-color:var(--border2)}
+  .src-item.selected{border-color:var(--blue);background:var(--blue-dim)}
+  .src-thumb{width:36px;height:22px;object-fit:cover;border-radius:3px;background:var(--bg);flex-shrink:0}
+  .src-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .src-name{font-size:10px;font-weight:600;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .src-item.selected .src-name{color:var(--text)}
+  .src-saved-badge{font-size:8px;font-weight:700;color:var(--green);letter-spacing:.04em;text-transform:uppercase}
+  .load-btn{font-size:9px;font-weight:600;padding:2px 7px;border-radius:3px;border:none;
+    background:#163d28;color:var(--green);cursor:pointer;white-space:nowrap;transition:background .15s;flex-shrink:0}
+  .load-btn:hover{background:#166534}
+  .empty-sm{padding:14px 8px;font-size:10px;color:var(--text3);text-align:center}
+
+  /* Main */
+  .main{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px;min-width:0}
+  .main::-webkit-scrollbar{width:4px}
+  .main::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+  /* Cards */
+  .card{background:var(--bg3);border:0.5px solid var(--border);border-radius:var(--r);overflow:hidden;flex-shrink:0}
+  .card-hdr{padding:8px 12px;background:var(--bg2);border-bottom:0.5px solid var(--border);
+    display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+  .card-title{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--text3)}
+  .card-body{padding:10px 12px}
+
+  /* Mirror */
+  .mirror-wrap{position:relative;background:#000;border-radius:var(--rsm);overflow:hidden;aspect-ratio:16/9;width:100%}
+  #mirrorVideo{width:100%;height:100%;object-fit:contain;display:block}
+  .mirror-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.75);font-size:12px;color:var(--text2);text-align:center;padding:12px}
+
+  /* Endpoint */
+  .ep-box{display:flex;gap:6px}
+  .ep-input{flex:1;min-width:0;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--rsm);
+    color:var(--text);font-size:11px;padding:7px 10px;outline:none;font-family:monospace;transition:border-color .15s}
+  .ep-input:focus{border-color:var(--blue)}
+  .ep-input.connected{border-color:#163d28;color:var(--green)}
+  .ep-btn{padding:0 12px;background:var(--border2);border:none;border-radius:var(--rsm);
+    color:var(--text2);font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;
+    transition:background .15s,color .15s;flex-shrink:0}
+  .ep-btn:hover{background:var(--blue);color:#fff}
+  .ep-btn.ok{background:#163d28;color:var(--green)}
+  .ep-status{font-size:10px;margin-top:5px;color:var(--text3);display:flex;align-items:center;gap:5px}
+  .ep-dot{width:5px;height:5px;border-radius:50%;background:var(--text3);flex-shrink:0}
+  .ep-dot.ok{background:var(--green)}
+  .ep-dot.err{background:var(--red)}
+  .ep-dot.checking{background:var(--yellow);animation:blink 1s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+  /* Team sections */
+  .team-section{margin-bottom:10px}
+  .team-section:last-child{margin-bottom:0}
+  .team-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .team-lbl{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .team-lbl.blue{color:var(--blue)}
+  .team-lbl.amber{color:var(--amber)}
+  .team-summary{font-size:10px;color:var(--text3)}
+
+  /* Scrollable player row */
+  .player-scroll{display:flex;gap:6px;overflow-x:auto;padding-bottom:5px;
+    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch}
+  .player-scroll::-webkit-scrollbar{height:3px}
+  .player-scroll::-webkit-scrollbar-track{background:var(--bg2);border-radius:2px}
+  .player-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+  .player-scroll::-webkit-scrollbar-thumb:hover{background:var(--blue)}
+
+  /* Player slot */
+  .pslot{flex-shrink:0;width:122px;background:var(--bg2);border:1px solid var(--border);
+    border-radius:var(--rsm);padding:8px 7px 7px;display:flex;flex-direction:column;gap:5px;
+    scroll-snap-align:start;transition:border-color .2s,background .2s;position:relative}
+  .pslot.has-region{border-color:#1a2d5e}
+  .pslot.is-alive{border-color:var(--green);background:#050e07}
+  .pslot.is-dead{border-color:var(--red);background:#0e0505}
+  .pslot.is-low{border-color:var(--orange);background:#120a00}
+
+  .pslot-top{display:flex;align-items:center;justify-content:space-between}
+  .pslot-num{font-size:11px;font-weight:700;color:var(--text2)}
+  .pslot-dot{width:6px;height:6px;border-radius:50%;background:var(--border2);transition:background .2s,box-shadow .2s}
+  .pslot.has-region .pslot-dot{background:#3b6acf55}
+  .pslot.is-alive .pslot-dot{background:var(--green);box-shadow:0 0 4px #22c55e88}
+  .pslot.is-dead  .pslot-dot{background:var(--red)}
+  .pslot.is-low   .pslot-dot{background:var(--orange);box-shadow:0 0 4px #f5994688}
+
+  /* Reference image previews */
+  .ref-previews{display:flex;gap:3px}
+  .ref-box{flex:1;aspect-ratio:2/1;border-radius:3px;overflow:hidden;background:var(--bg);
+    position:relative;border:1px solid var(--border);display:flex;align-items:center;justify-content:center}
+  .ref-box img{width:100%;height:100%;object-fit:cover;display:block}
+  .ref-lbl{position:absolute;bottom:0;left:0;right:0;font-size:7px;font-weight:700;
+    letter-spacing:.05em;text-transform:uppercase;text-align:center;
+    background:rgba(0,0,0,.6);padding:1px 0;color:rgba(255,255,255,.6)}
+  /* Orange low-health swatch */
+  .ref-box.orange-swatch{background:#f59946}
+  .ref-box.orange-swatch .ref-lbl{color:rgba(0,0,0,.7)}
+
+  /* Score bars */
+  .scores{display:flex;flex-direction:column;gap:2px}
+  .sbar-wrap{background:var(--bg);border-radius:2px;height:3px;overflow:hidden}
+  .sbar{height:100%;border-radius:2px;transition:width .1s,background .2s}
+  .sbar.a{background:var(--green)}
+  .sbar.d{background:var(--red)}
+  .slabel{font-size:8px;color:var(--text3);display:flex;justify-content:space-between}
+
+  /* State label */
+  .state-lbl{font-size:9px;font-weight:700;text-align:center;padding:2px 0;border-radius:2px;letter-spacing:.04em}
+  .state-lbl.alive{background:#0e1f12;color:var(--green)}
+  .state-lbl.dead{background:#1a0606;color:var(--red)}
+  .state-lbl.low{background:#1a0e00;color:var(--orange)}
+  .state-lbl.waiting{background:var(--bg);color:var(--text3)}
+
+  /* Draw / clear buttons */
+  .draw-btn{width:100%;font-size:9px;font-weight:600;padding:4px 0;border-radius:3px;border:none;
+    cursor:pointer;transition:background .15s,color .15s;text-align:center}
+  .draw-btn.set{background:#1a2d5e;color:#7ba3f0}
+  .draw-btn.unset{background:var(--border2);color:var(--text2)}
+  .draw-btn:hover:not(:disabled){background:var(--blue);color:#fff}
+  .draw-btn:disabled{opacity:.3;cursor:default}
+  .clear-btn{width:100%;font-size:8px;background:transparent;border:none;color:var(--text3);
+    cursor:pointer;padding:1px 0;transition:color .15s}
+  .clear-btn:hover{color:var(--red)}
+
+  /* Buttons */
+  .btn{display:inline-flex;align-items:center;gap:5px;padding:6px 14px;border-radius:var(--rsm);
+    font-size:11px;font-weight:600;cursor:pointer;border:none;transition:opacity .15s,background .15s}
+  .btn:disabled{opacity:.35;cursor:default}
+  .btn-green{background:#14532d;color:var(--green)}
+  .btn-green:hover:not(:disabled){background:#166534}
+  .btn-red{background:#450a0a;color:var(--red)}
+  .btn-red:hover:not(:disabled){background:#7f1d1d}
+  .btn-blue{background:#1a2d5e;color:#7ba3f0}
+  .btn-alive{background:#163d28;color:var(--green);border:1px solid #22c55e44}
+  .btn-blue:hover:not(:disabled){background:var(--blue);color:#fff}
+  .btn-ghost{background:var(--border);color:var(--text2)}
+  .btn-ghost:hover:not(:disabled){background:var(--border2);color:var(--text)}
+  .btn-sm{padding:4px 9px;font-size:10px}
+
+  /* Save layout bar */
+  .save-bar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);
+    border-top:0.5px solid var(--border);flex-wrap:wrap}
+  .save-bar-label{font-size:10px;color:var(--text3);flex:1}
+
+  /* Log */
+  .log{background:var(--bg2);border:0.5px solid var(--border);border-radius:var(--rsm);
+    padding:7px 10px;font-family:monospace;font-size:10px;color:var(--text2);
+    height:80px;overflow-y:auto;display:flex;flex-direction:column-reverse}
+  .log::-webkit-scrollbar{width:3px}
+  .log::-webkit-scrollbar-thumb{background:var(--border2)}
+  .log-line{padding:1px 0}
+  .log-line.ok{color:var(--green)}
+  .log-line.err{color:var(--red)}
+  .log-line.warn{color:var(--yellow)}
+
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .hint{font-size:10px;color:var(--text3);line-height:1.6}
+  .hint strong{color:var(--text2)}
+  #samplerCanvas{display:none}
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <span class="titlebar-title">Health Capture</span>
+  <div class="sdot" id="statusDot"></div>
+  <span id="statusText" style="font-size:10px;color:var(--text3)">idle</span>
+  <span class="tmpl-badge err" id="tmplBadge">Loading templates…</span>
+</div>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sb-hdr">
+      <span class="sb-label">Window</span>
+      <button class="btn btn-ghost btn-sm" id="refreshBtn">↺</button>
+    </div>
+    <div class="src-list" id="sourceList"><div class="empty-sm">Scanning…</div></div>
+  </div>
+
+  <div class="main">
+
+    <!-- Live mirror -->
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Live mirror</span>
+        <span id="mirrorStatus" style="font-size:10px;color:var(--text3)">No stream — select a window</span>
+      </div>
+      <div class="card-body">
+        <div class="mirror-wrap">
+          <video id="mirrorVideo" autoplay muted playsinline></video>
+          <div class="mirror-overlay" id="mirrorOverlay">Select a window from the sidebar to start mirroring</div>
+        </div>
+        <p class="hint" style="margin-top:8px">
+          Live game mirror. Draw a region over each player's <strong>full card</strong> (portrait + health bar).<br>
+          🟠 <strong>Orange bar</strong> = low health — never triggers death. ⬛ <strong>Card dims</strong> = dead.
+        </p>
+      </div>
+    </div>
+
+    <!-- Endpoint -->
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Scoreboard endpoint</span></div>
+      <div class="card-body">
+        <div class="ep-box">
+          <input class="ep-input" id="endpointInput" type="text" value="https://realtime-production.vercel.app/api/pusher/scoreboard"/>
+          <button class="ep-btn" id="connectBtn">Test</button>
+        </div>
+        <div class="ep-status"><div class="ep-dot" id="epDot"></div><span id="epText">Not tested — only sends on kill/revive events</span></div>
+      </div>
+    </div>
+
+    <!-- Player regions -->
+    <div class="card">
+      <div class="card-hdr">
+        <span class="card-title">Player regions</span>
+        <span class="hint">Draw one region per player</span>
+      </div>
+      <div class="card-body">
+        <div class="team-section">
+          <div class="team-hdr">
+            <span class="team-lbl blue">▪ Team 1</span>
+            <span class="team-summary" id="t1-summary">0/5 regions set</span>
+          </div>
+          <div class="player-scroll" id="scroll-0"></div>
+        </div>
+        <div class="team-section">
+          <div class="team-hdr">
+            <span class="team-lbl amber">▪ Team 2</span>
+            <span class="team-summary" id="t2-summary">0/5 regions set</span>
+          </div>
+          <div class="player-scroll" id="scroll-1"></div>
+        </div>
+      </div>
+      <!-- Save layout bar -->
+      <div class="save-bar">
+        <span class="save-bar-label" id="saveBarLabel">Draw regions then save layout for quick reload next time</span>
+        <button class="btn btn-blue btn-sm" id="saveLayoutBtn" disabled>💾 Save layout</button>
+        <button class="btn btn-ghost btn-sm" id="clearLayoutBtn" style="display:none">🗑 Delete saved</button>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card">
+      <div class="card-hdr"><span class="card-title">Detection control</span></div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+        <div class="row">
+          <button class="btn btn-green" id="startBtn" disabled>▶ Start</button>
+          <button class="btn btn-red"   id="stopBtn"  disabled>■ Stop</button>
+          <button class="btn btn-alive" id="aliveBtn">✓ Set all alive</button>
+          <button class="btn btn-ghost btn-sm" id="resetAllBtn">Reset all</button>
+        </div>
+
+        <div>
+          <div style="font-size:10px;color:var(--text3);margin-bottom:4px;font-weight:600;letter-spacing:.06em;text-transform:uppercase">Log</div>
+          <div class="log" id="log"><div class="log-line">Ready.</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<canvas id="samplerCanvas"></canvas>
+
+<script>
+const regions      = {}
+let selectedSourceId      = null
+let selectedWindowName    = null
+let selectedDisplayBounds = null   // which monitor the selected window is on
+let videoStream           = null
+let detecting          = false
+let detectLoop         = null
+let pendingRegion      = null
+let templatesOk        = false
+let savedLayouts       = {}
+
+const video         = document.getElementById('mirrorVideo')
+const mirrorOverlay = document.getElementById('mirrorOverlay')
+const samplerCanvas = document.getElementById('samplerCanvas')
+const samplerCtx    = samplerCanvas.getContext('2d', { willReadFrequently: true })
+const statusDot     = document.getElementById('statusDot')
+const statusTextEl  = document.getElementById('statusText')
+const startBtn      = document.getElementById('startBtn')
+const stopBtn       = document.getElementById('stopBtn')
+const logEl         = document.getElementById('log')
+const saveLayoutBtn = document.getElementById('saveLayoutBtn')
+const clearLayoutBtn= document.getElementById('clearLayoutBtn')
+const saveBarLabel  = document.getElementById('saveBarLabel')
+
+function addLog(msg, type='') {
+  const line = document.createElement('div')
+  line.className = 'log-line' + (type ? ' '+type : '')
+  line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`
+  logEl.prepend(line)
+  if (logEl.children.length > 150) logEl.removeChild(logEl.lastChild)
+}
+
+function setStatus(s, t) {
+  statusDot.className = 'sdot' + (s ? ' '+s : '')
+  statusTextEl.textContent = t
+}
+
+// ── Templates ─────────────────────────────────────────────────────────────
+async function checkTemplates() {
+  const { ready, hasAlive } = await window.api.templatesReady()
+  templatesOk = true   // always allow start — template is a bonus signal, not a blocker
+  const badge = document.getElementById('tmplBadge')
+  if (ready) {
+    badge.className = 'tmpl-badge ok'
+    badge.textContent = '✓ Dead template + σ detection'
+    addLog('Dead template loaded — using brightness σ + orange gate + NCC similarity', 'ok')
+  } else {
+    badge.className = 'tmpl-badge ok'
+    badge.textContent = '✓ σ detection (no template)'
+    addLog('No dead template in assets/ — running brightness σ + orange gate only', 'warn')
+  }
+  updateStartBtn()
+}
+
+// ── Layouts ───────────────────────────────────────────────────────────────
+async function loadSavedLayouts() {
+  savedLayouts = await window.api.getLayouts()
+}
+
+async function saveCurrentLayout() {
+  if (!selectedWindowName) return
+  const result = await window.api.saveLayout({ windowName: selectedWindowName, regions })
+  if (result.ok) {
+    savedLayouts[selectedWindowName] = { windowName: selectedWindowName, regions }
+    addLog(`Layout saved for "${selectedWindowName}"`, 'ok')
+    updateSaveBar()
+    await loadSources()  // refresh sidebar to show saved badge
+  }
+}
+
+async function deleteCurrentLayout() {
+  if (!selectedWindowName) return
+  await window.api.deleteLayout({ windowName: selectedWindowName })
+  delete savedLayouts[selectedWindowName]
+  addLog(`Layout deleted for "${selectedWindowName}"`)
+  updateSaveBar()
+  await loadSources()
+}
+
+function loadLayout(windowName) {
+  const layout = savedLayouts[windowName]
+  if (!layout) return
+  // Clear existing
+  Object.keys(regions).forEach(k => {
+    const [t, p] = k.split('-').map(Number)
+    window.api.unregisterPlayer({ teamIndex: t, playerIndex: p })
+    delete regions[k]
+  })
+  // Apply saved regions
+  Object.entries(layout.regions).forEach(([key, reg]) => {
+    regions[key] = reg
+    const [t, p] = key.split('-').map(Number)
+    window.api.registerPlayer({ teamIndex: t, playerIndex: p })
+  })
+  buildSlots()
+  updateStartBtn()
+  addLog(`Layout loaded for "${windowName}" — ${Object.keys(regions).length} regions`, 'ok')
+}
+
+function updateSaveBar() {
+  const hasRegions = Object.keys(regions).length > 0
+  const hasSaved   = selectedWindowName && savedLayouts[selectedWindowName]
+  saveLayoutBtn.disabled = !hasRegions || !selectedWindowName
+  clearLayoutBtn.style.display = hasSaved ? '' : 'none'
+  if (hasSaved) {
+    const d = new Date(savedLayouts[selectedWindowName].savedAt)
+    saveBarLabel.textContent = `Saved layout loaded — ${Object.keys(savedLayouts[selectedWindowName].regions).length} regions`
+  } else if (hasRegions) {
+    saveBarLabel.textContent = 'Regions set — click Save to keep them for next time'
+  } else {
+    saveBarLabel.textContent = 'Draw regions then save layout for quick reload next time'
+  }
+}
+
+saveLayoutBtn.addEventListener('click', saveCurrentLayout)
+clearLayoutBtn.addEventListener('click', deleteCurrentLayout)
+
+// ── Build player slots ────────────────────────────────────────────────────
+function buildSlots() {
+  ;[0,1].forEach(t => {
+    const row = document.getElementById(`scroll-${t}`)
+    row.innerHTML = ''
+    for (let p=0; p<5; p++) row.appendChild(makeSlot(t, p))
+    updateSummary(t)
+  })
+  updateSaveBar()
+}
+
+function makeSlot(t, p) {
+  const key       = `${t}-${p}`
+  const hasRegion = !!regions[key]
+
+  const el = document.createElement('div')
+  el.className = 'pslot' + (hasRegion ? ' has-region' : '')
+  el.id = `pslot-${key}`
+
+  el.innerHTML = `
+    <div class="pslot-top">
+      <span class="pslot-num">P${p+1}</span>
+      <div class="pslot-dot" id="dot-${key}"></div>
+    </div>
+    <div class="scores" id="scores-${key}" style="${hasRegion?'':'display:none'}">
+      <div class="sbar-wrap" style="position:relative;height:10px;background:var(--bg);border-radius:3px;overflow:hidden;margin-bottom:3px">
+        <div class="sbar a" id="abar-${key}" style="width:50%;height:100%;border-radius:3px;transition:width .1s,background .1s"></div>
+        <div id="threshold-marker-${key}" style="position:absolute;top:0;bottom:0;width:2px;background:rgba(255,80,80,0.7);border-radius:1px;left:55%"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text3)">
+        <span id="ascore-${key}">b: — m: —</span>
+        <span id="dscore-${key}" style="color:var(--text3)">σ: —</span>
+      </div>
+      <div id="consist-${key}" style="font-size:9px;color:var(--text3);text-align:right"></div>
+    </div>
+    <div class="state-lbl waiting" id="state-${key}">${hasRegion ? 'waiting…' : 'no region'}</div>
+    <button class="draw-btn ${hasRegion?'set':'unset'}" id="draw-${key}" ${!videoStream?'disabled':''}>
+      ${hasRegion ? '↺ Redraw' : '📍 Draw region'}
+    </button>
+    ${hasRegion ? `<button class="clear-btn" id="clear-${key}">✕ clear</button>` : ''}
+  `
+
+  el.querySelector(`#draw-${key}`).addEventListener('click', () => {
+    if (!selectedSourceId) { addLog('Select a window first', 'err'); return }
+    pendingRegion = { t, p }
+    addLog(`Drawing region for T${t+1}P${p+1}…`, 'warn')
+    window.api.openRegionSelector({ sourceId: selectedSourceId, displayBounds: selectedDisplayBounds })
+  })
+
+  const clearBtn = el.querySelector(`#clear-${key}`)
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      delete regions[key]
+      window.api.unregisterPlayer({ teamIndex: t, playerIndex: p })
+      refreshSlot(t, p)
+      updateSummary(t)
+      updateStartBtn()
+      updateSaveBar()
+      addLog(`T${t+1}P${p+1} cleared`)
+    })
+  }
+  return el
+}
+
+function refreshSlot(t, p) {
+  const old = document.getElementById(`pslot-${t}-${p}`)
+  if (old) old.replaceWith(makeSlot(t, p))
+}
+
+function updateSummary(t) {
+  let count = 0
+  for (let p=0; p<5; p++) { if (regions[`${t}-${p}`]) count++ }
+  document.getElementById(`t${t+1}-summary`).textContent = `${count}/5 regions set`
+}
+
+function updateStartBtn() {
+  const anyRegion = Object.keys(regions).length > 0
+  startBtn.disabled = !videoStream || !anyRegion || !templatesOk || detecting
+}
+
+// ── Region overlay result — auto-captures alive frame on draw ────────────
+window.api.on('region-set', async ({ region }) => {
+  if (!pendingRegion) return
+  const { t, p } = pendingRegion; pendingRegion = null
+  const key = `${t}-${p}`
+
+  // region coords are absolute screen coords from the overlay
+  // The video stream captures the selected window which starts at its display origin
+  // We need to subtract the display offset to get window-relative coords
+  const dispX = selectedDisplayBounds ? selectedDisplayBounds.x : 0
+  const dispY = selectedDisplayBounds ? selectedDisplayBounds.y : 0
+  const dispW = selectedDisplayBounds ? selectedDisplayBounds.width  : screen.width
+  const dispH = selectedDisplayBounds ? selectedDisplayBounds.height : screen.height
+
+  // Scale from display pixels to video pixels
+  const scaleX = video.videoWidth  / dispW
+  const scaleY = video.videoHeight / dispH
+
+  // Subtract display offset so coords are relative to the display, then scale to video
+  regions[key] = {
+    x: Math.max(0, Math.round((region.x - dispX) * scaleX)),
+    y: Math.max(0, Math.round((region.y - dispY) * scaleY)),
+    w: Math.max(1, Math.round(region.width  * scaleX)),
+    h: Math.max(1, Math.round(region.height * scaleY)),
+  }
+  window.api.registerPlayer({ teamIndex: t, playerIndex: p })
+
+  // Auto-capture current video frame as this player's alive template
+  if (videoStream && video.readyState >= 2) {
+    samplerCanvas.width  = video.videoWidth
+    samplerCanvas.height = video.videoHeight
+    samplerCtx.drawImage(video, 0, 0)
+    const { x, y, w, h } = regions[key]
+    const imageData = samplerCtx.getImageData(
+      Math.max(0, x), Math.max(0, y),
+      Math.max(1, Math.min(w, samplerCanvas.width  - x)),
+      Math.max(1, Math.min(h, samplerCanvas.height - y))
+    )
+    const result = await window.api.saveAliveTemplate({
+      teamIndex: t, playerIndex: p,
+      buffer: Array.from(imageData.data),
+      width: w, height: h,
+    })
+    if (result.ok) addLog(`T${t+1}P${p+1} region set — alive template captured`, 'ok')
+  } else {
+    addLog(`T${t+1}P${p+1} region set`, 'ok')
+  }
+
+  refreshSlot(t, p)
+  updateSummary(t)
+  updateStartBtn()
+  updateSaveBar()
+})
+
+// ── Window picker + mirror ────────────────────────────────────────────────
+async function loadSources() {
+  const list = document.getElementById('sourceList')
+  list.innerHTML = '<div class="empty-sm">Scanning…</div>'
+  const sources = await window.api.getSources()
+  list.innerHTML = ''
+  if (!sources.length) { list.innerHTML = '<div class="empty-sm">No windows.</div>'; return }
+  sources.forEach(src => {
+    const hasSaved = !!savedLayouts[src.name]
+    const el = document.createElement('div')
+    el.className = 'src-item' + (src.id === selectedSourceId ? ' selected' : '')
+    el.innerHTML = `
+      <img class="src-thumb" src="${src.thumbnail}" alt=""/>
+      <div class="src-info">
+        <span class="src-name" title="${src.name}">${src.name}</span>
+        ${hasSaved ? '<span class="src-saved-badge">💾 saved</span>' : ''}
+      </div>
+      ${hasSaved ? `<button class="load-btn" data-name="${src.name}">Load</button>` : ''}
+    `
+    el.addEventListener('click', (e) => {
+      if (e.target.classList.contains('load-btn')) return
+      document.querySelectorAll('.src-item').forEach(e => e.classList.remove('selected'))
+      el.classList.add('selected')
+      selectedSourceId      = src.id
+      selectedWindowName    = src.name
+      // Use the display this source actually belongs to (resolved in main process)
+      selectedDisplayBounds = src.displayBounds || src.primary || null
+      startMirror(src.id, src.name)
+      updateSaveBar()
+    })
+    const loadBtn = el.querySelector('.load-btn')
+    if (loadBtn) {
+      loadBtn.addEventListener('click', (e) => {
+        e.stopPropagation()
+        document.querySelectorAll('.src-item').forEach(e => e.classList.remove('selected'))
+        el.classList.add('selected')
+        selectedSourceId      = src.id
+        selectedWindowName    = src.name
+        selectedDisplayBounds = src.displayBounds || src.primary || null
+        startMirror(src.id, src.name)
+        loadLayout(src.name)
+        updateSaveBar()
+      })
+    }
+    list.appendChild(el)
+  })
+}
+
+async function startMirror(sourceId, sourceName) {
+  if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null }
+  try {
+    const streamId = await window.api.getStreamId(sourceId)
+    videoStream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: streamId, maxWidth: 1920, maxHeight: 1080, maxFrameRate: 30 } }
+    })
+    video.srcObject = videoStream
+    mirrorOverlay.style.display = 'none'
+    document.getElementById('mirrorStatus').textContent = `Mirroring: ${sourceName}`
+    document.querySelectorAll('.draw-btn').forEach(b => b.disabled = false)
+    addLog(`Mirroring: ${sourceName}`, 'ok')
+    updateStartBtn()
+  } catch(err) {
+    addLog(`Mirror failed: ${err.message}`, 'err')
+  }
+}
+
+// ── Detection loop — batched: one frame grab, one POST per cycle ──────────
+function startDetection() {
+  detecting = true; startBtn.disabled = true; stopBtn.disabled = false
+  setStatus('live', 'detecting'); addLog('Detection started.', 'ok')
+  const endpoint = document.getElementById('endpointInput').value.trim()
+
+  detectLoop = setInterval(async () => {
+    if (!videoStream || video.readyState < 2) return
+
+    // Draw ONE frame shared by all players this cycle
+    samplerCanvas.width  = video.videoWidth
+    samplerCanvas.height = video.videoHeight
+    samplerCtx.drawImage(video, 0, 0)
+
+    // Collect all player pixel data into one batch
+    const players = []
+    Object.entries(regions).forEach(([key, reg]) => {
+      const [t, p] = key.split('-').map(Number)
+      const { x, y, w, h } = reg
+      const imageData = samplerCtx.getImageData(x, y, w, h)
+      players.push({ teamIndex: t, playerIndex: p, buffer: Array.from(imageData.data), width: w, height: h })
+    })
+
+    if (players.length === 0) return
+
+    // Single IPC call → single POST if anything changed
+    await window.api.analyseBatch({ players, endpoint })
+  }, 80)
+}
+
+function stopDetection() {
+  clearInterval(detectLoop); detectLoop = null
+  detecting = false; startBtn.disabled = false; stopBtn.disabled = true
+  setStatus('', 'idle'); addLog('Detection stopped.')
+  updateStartBtn()
+}
+
+// ── IPC events ────────────────────────────────────────────────────────────
+window.api.on('match-scores', ({ teamIndex, playerIndex, brightness, mean, stddev, deadThreshold, consecutiveDead, consecutiveAlive, nowDead, lowHealth, deadSim, status }) => {
+  const key     = `${teamIndex}-${playerIndex}`
+  const abar    = document.getElementById(`abar-${key}`)
+  const ascore  = document.getElementById(`ascore-${key}`)
+  const dscore  = document.getElementById(`dscore-${key}`)
+  const consist = document.getElementById(`consist-${key}`)
+  const marker  = document.getElementById(`threshold-marker-${key}`)
+  const scores  = document.getElementById(`scores-${key}`)
+  const state   = document.getElementById(`state-${key}`)
+  const slot    = document.getElementById(`pslot-${key}`)
+  if (!abar) return
+  if (scores) scores.style.display = 'flex'
+
+  if (status === 'warming') {
+    if (state) { state.className = 'state-lbl waiting'; state.textContent = '⏳ Calibrating…' }
+    return
+  }
+
+  // Bar: current brightness as % of mean (capped 0–130%)
+  const pct       = mean > 0 ? Math.min(130, Math.round((brightness / mean) * 100)) : 50
+  const markerPct = mean > 0 ? Math.min(100, Math.max(0, Math.round((deadThreshold / mean) * 100))) : 55
+
+  abar.style.width = pct + '%'
+  if (lowHealth)    abar.style.background = 'var(--orange)'
+  else if (nowDead) abar.style.background = 'var(--red)'
+  else              abar.style.background = 'var(--green)'
+
+  if (marker) marker.style.left = markerPct + '%'
+
+  if (ascore) ascore.textContent = `b:${brightness} m:${mean}`
+  // Show dead similarity score if template is active, otherwise show σ
+  if (dscore) dscore.textContent = deadSim > 0 ? `sim:${deadSim}%` : `σ:${stddev || '—'}`
+
+  if (consist && consecutiveDead > 0) consist.textContent = `${consecutiveDead}/3 frames`
+  else if (consist && consecutiveAlive > 0) consist.textContent = `reviving ${consecutiveAlive}/3`
+  else if (consist) consist.textContent = ''
+
+  if (lowHealth) {
+    if (state) { state.className = 'state-lbl low'; state.textContent = '🟠 Low health' }
+    if (slot)  { slot.classList.remove('is-dead','is-alive'); slot.classList.add('is-low') }
+  } else if (nowDead) {
+    if (state) { state.className = 'state-lbl dead'; state.textContent = '💀 Dead' }
+    if (slot)  { slot.classList.remove('is-alive','is-low'); slot.classList.add('is-dead') }
+  } else {
+    if (state) { state.className = 'state-lbl alive'; state.textContent = '✓ Alive' }
+    if (slot)  { slot.classList.remove('is-dead','is-low'); slot.classList.add('is-alive') }
+  }
+})
+
+window.api.on('state-change', ({ teamIndex, playerIndex, isDead }) => {
+  addLog(`${isDead?'💀':'✓'} Team ${teamIndex+1} P${playerIndex+1} ${isDead?'DIED':'REVIVED'} — POST sent`, isDead?'warn':'ok')
+  setStatus(isDead?'warn':'live', isDead?'kill':'revive')
+  setTimeout(() => { if (detecting) setStatus('live','detecting') }, 1200)
+})
+
+window.api.on('post-result', ({ ok, status }) => {
+  addLog(`POST ${ok?'OK':'FAILED'} (${status})`, ok?'ok':'err')
+})
+
+window.api.on('post-error', msg => { addLog(msg, 'err') })
+
+window.api.on('all-alive-sent', () => {
+  addLog('✓ All players set alive on scoreboard', 'ok')
+  setStatus('live', 'all alive')
+  setTimeout(() => { if (detecting) setStatus('live','detecting'); else setStatus('','idle') }, 2000)
+})
+
+// ── Endpoint test — only checks connectivity, does NOT send any payload ───
+document.getElementById('connectBtn').addEventListener('click', async () => {
+  const url = document.getElementById('endpointInput').value.trim()
+  const dot = document.getElementById('epDot')
+  const txt = document.getElementById('epText')
+  const btn = document.getElementById('connectBtn')
+  dot.className = 'ep-dot checking'; txt.textContent = 'Testing…'; btn.disabled = true
+  try {
+    // Use HEAD/GET to check reachability — no payload sent, scoreboard stays untouched
+    const res = await fetch(url, { method: 'HEAD' }).catch(() => fetch(url, { method: 'GET' }))
+    const ok = res.status < 500
+    dot.className = 'ep-dot' + (ok?' ok':' err')
+    txt.textContent = ok ? `Reachable (${res.status}) — only sends on kill/revive` : `Error ${res.status}`
+    document.getElementById('endpointInput').className = 'ep-input' + (ok?' connected':'')
+    btn.className = 'ep-btn' + (ok?' ok':''); btn.textContent = ok?'✓ OK':'Retry'
+    addLog(ok?'Endpoint reachable — no data sent':`Endpoint error ${res.status}`, ok?'ok':'err')
+  } catch(e) {
+    dot.className='ep-dot err'; txt.textContent=`Failed: ${e.message}`
+    btn.textContent='Retry'; addLog(`Unreachable: ${e.message}`,'err')
+  }
+  btn.disabled = false
+})
+
+document.getElementById('refreshBtn').addEventListener('click', loadSources)
+startBtn.addEventListener('click', startDetection)
+stopBtn.addEventListener('click', stopDetection)
+document.getElementById('aliveBtn').addEventListener('click', () => {
+  const endpoint = document.getElementById('endpointInput').value.trim()
+  if (!endpoint) { addLog('Set an endpoint first', 'err'); return }
+  window.api.setAllAlive({ endpoint })
+  addLog('Set all alive — POST sent', 'ok')
+  // Update all slot visuals to alive
+  ;[0,1].forEach(t => {
+    for (let p=0; p<5; p++) {
+      const slot  = document.getElementById(`pslot-${t}-${p}`)
+      const state = document.getElementById(`state-${t}-${p}`)
+      if (slot)  { slot.classList.remove('is-dead','is-low'); slot.classList.add('is-alive') }
+      if (state) { state.className = 'state-lbl alive'; state.textContent = '✓ Alive' }
+    }
+  })
+})
+
+document.getElementById('resetAllBtn').addEventListener('click', () => {
+  Object.keys(regions).forEach(key => {
+    const [t, p] = key.split('-').map(Number)
+    window.api.unregisterPlayer({ teamIndex: t, playerIndex: p })
+  })
+  Object.keys(regions).forEach(k => delete regions[k])
+  window.api.resetAll()
+  buildSlots()
+  addLog('All regions reset.')
+  updateStartBtn()
+})
+
+// ── Init ──────────────────────────────────────────────────────────────────
+async function init() {
+  await loadSavedLayouts()
+  buildSlots()
+  await loadSources()
+  await checkTemplates()
+}
+init()
+</script>
+</body>
+</html>

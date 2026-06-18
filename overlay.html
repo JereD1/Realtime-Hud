@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{background:transparent;overflow:hidden;cursor:crosshair;user-select:none;-webkit-user-select:none}
+  #canvas{position:fixed;inset:0;width:100vw;height:100vh}
+  #hint{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    background:rgba(10,11,15,0.92);border:0.5px solid rgba(59,106,207,0.5);
+    border-radius:8px;padding:10px 20px;font-family:system-ui,sans-serif;
+    font-size:13px;font-weight:500;color:rgba(232,234,240,0.9);
+    letter-spacing:0.02em;pointer-events:none;white-space:nowrap;
+  }
+  #hint span{color:#3b6acf}
+  #cancel{
+    position:fixed;top:20px;right:20px;background:rgba(10,11,15,0.9);
+    border:0.5px solid rgba(239,68,68,0.4);border-radius:6px;padding:7px 16px;
+    font-family:system-ui,sans-serif;font-size:12px;font-weight:600;color:#ef4444;
+    cursor:pointer;letter-spacing:0.04em;z-index:10;
+  }
+  #coords{
+    position:fixed;top:20px;left:20px;background:rgba(10,11,15,0.88);
+    border:0.5px solid rgba(30,32,48,0.8);border-radius:5px;padding:5px 10px;
+    font-family:monospace;font-size:11px;color:rgba(136,138,154,0.9);
+    pointer-events:none;letter-spacing:0.03em;
+  }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div id="hint">Click and drag to select the <span>health bar region</span> — release to confirm</div>
+<button id="cancel">✕ Cancel</button>
+<div id="coords">—</div>
+
+<script>
+  const canvas   = document.getElementById('canvas')
+  const ctx      = canvas.getContext('2d')
+  const coordsEl = document.getElementById('coords')
+
+  // Offset of this window relative to virtual desktop origin
+  // (handles multi-monitor setups where the overlay spans all screens)
+  let offsetX = 0, offsetY = 0
+  let sourceId = null
+  let drawing = false
+  let startX = 0, startY = 0
+
+  function resize() {
+    canvas.width  = window.innerWidth
+    canvas.height = window.innerHeight
+    redim()
+  }
+  resize()
+  window.addEventListener('resize', resize)
+
+  function redim() {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+  }
+
+  window.api.on('init-overlay', ({ sourceId: sid, offsetX: ox = 0, offsetY: oy = 0 }) => {
+    sourceId = sid
+    offsetX  = ox
+    offsetY  = oy
+    redim()
+  })
+
+  function draw(x, y, w, h) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    if (w === 0 && h === 0) return
+
+    ctx.clearRect(x, y, w, h)
+
+    ctx.strokeStyle = '#3b6acf'
+    ctx.lineWidth   = 2
+    ctx.setLineDash([])
+    ctx.strokeRect(x, y, w, h)
+
+    const hs = 6
+    ctx.fillStyle = '#3b6acf'
+    ;[[x,y],[x+w,y],[x,y+h],[x+w,y+h]].forEach(([cx,cy]) =>
+      ctx.fillRect(cx - hs/2, cy - hs/2, hs, hs)
+    )
+
+    const label = `${Math.abs(Math.round(w))} × ${Math.abs(Math.round(h))}`
+    ctx.font = '500 11px system-ui'
+    const tw = ctx.measureText(label).width
+    const lx = x + w/2 - tw/2
+    const ly = y < 24 ? y + Math.abs(h) + 16 : y - 8
+    ctx.fillStyle = 'rgba(10,11,15,0.85)'
+    ctx.fillRect(lx - 6, ly - 13, tw + 12, 18)
+    ctx.fillStyle = '#e8eaf0'
+    ctx.fillText(label, lx, ly)
+  }
+
+  canvas.addEventListener('mousedown', e => {
+    drawing = true
+    startX = e.clientX
+    startY = e.clientY
+    draw(startX, startY, 0, 0)
+  })
+
+  canvas.addEventListener('mousemove', e => {
+    coordsEl.textContent = `${Math.round(e.clientX + offsetX)}, ${Math.round(e.clientY + offsetY)}`
+    if (!drawing) return
+    draw(startX, startY, e.clientX - startX, e.clientY - startY)
+  })
+
+  canvas.addEventListener('mouseup', e => {
+    if (!drawing) return
+    drawing = false
+    const w = e.clientX - startX
+    const h = e.clientY - startY
+    if (Math.abs(w) < 10 || Math.abs(h) < 4) { redim(); return }
+
+    // Convert canvas-local coords back to screen coords (add window offset)
+    const region = {
+      x:      (w < 0 ? e.clientX : startX) + offsetX,
+      y:      (h < 0 ? e.clientY : startY) + offsetY,
+      width:  Math.abs(w),
+      height: Math.abs(h),
+    }
+    window.api.confirmRegion({ region, sourceId })
+  })
+
+  document.getElementById('cancel').addEventListener('click', () => window.api.cancelOverlay())
+
+  requestAnimationFrame(() => {
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+  })
+</script>
+</body>
+</html>
