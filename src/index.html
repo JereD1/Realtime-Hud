@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Realtime HUD</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101418;
+      --panel: #171d23;
+      --panel-2: #1e2630;
+      --line: #2d3945;
+      --text: #edf4f8;
+      --muted: #96a5af;
+      --accent: #49d39f;
+      --bad: #ff6b6b;
+      --warn: #f4c95d;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    aside {
+      border-right: 1px solid var(--line);
+      background: #121820;
+      padding: 18px;
+      overflow: auto;
+    }
+
+    main {
+      min-width: 0;
+      padding: 18px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 14px;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 22px; letter-spacing: 0; }
+    h2 { font-size: 15px; margin-bottom: 10px; }
+    h3 { font-size: 13px; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
+    p { color: var(--muted); line-height: 1.45; font-size: 13px; }
+
+    .stack { display: grid; gap: 14px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+
+    button, select, input {
+      font: inherit;
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+    }
+
+    button {
+      min-height: 38px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    button.primary { background: var(--accent); color: #07100c; border-color: var(--accent); }
+    button.danger { background: #3a2024; border-color: #6b3038; color: #ffd6d6; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    label { display: grid; gap: 6px; color: var(--muted); font-size: 12px; }
+    input, select { width: 100%; min-height: 36px; padding: 7px 9px; }
+    input[type="range"] { padding: 0; }
+
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row > * { flex: 1; }
+
+    .sources {
+      display: grid;
+      gap: 8px;
+      max-height: 280px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+
+    .source {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      text-align: left;
+      width: 100%;
+      min-height: 58px;
+      padding: 7px;
+      font-weight: 600;
+    }
+
+    .source.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+    .source img { width: 76px; height: 43px; object-fit: cover; border-radius: 5px; background: #0b0f13; }
+    .source span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .viewport {
+      min-height: 0;
+      background: #07090c;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+    }
+
+    canvas {
+      max-width: 100%;
+      max-height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+
+    .empty {
+      padding: 24px;
+      text-align: center;
+      max-width: 440px;
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .player {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      gap: 5px;
+      min-height: 78px;
+    }
+
+    .player.dead { border-color: #7a3034; background: #25181b; }
+    .player strong { font-size: 13px; }
+    .metric { color: var(--muted); font-size: 11px; }
+    .state { color: var(--accent); font-weight: 750; font-size: 12px; }
+    .dead .state { color: var(--bad); }
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+    .toolbar button { flex: 0 0 auto; }
+    .hint { color: var(--warn); }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="stack">
+      <section class="stack">
+        <div>
+          <h1>Realtime HUD</h1>
+          <p>Detect death by faded player cards.</p>
+        </div>
+        <button id="refreshSources" class="primary">Refresh windows</button>
+      </section>
+
+      <section class="panel">
+        <h2>Source</h2>
+        <div id="sources" class="sources"></div>
+      </section>
+
+      <section class="panel stack">
+        <h2>Detection</h2>
+        <label>
+          Poll rate
+          <input id="pollRate" type="number" min="80" max="2000" step="20" value="160">
+        </label>
+        <label>
+          Fade sensitivity
+          <input id="fadeThreshold" type="range" min="0.35" max="0.9" step="0.01" value="0.62">
+        </label>
+        <label>
+          Scoreboard endpoint
+          <input id="endpoint" type="url" value="http://localhost:3000/api/pusher/scoreboard">
+        </label>
+        <div class="row">
+          <button id="showOverlay">Show overlay</button>
+          <button id="hideOverlay">Hide overlay</button>
+        </div>
+      </section>
+    </aside>
+
+    <main>
+      <div class="toolbar">
+        <button id="capture" disabled>Capture frame</button>
+        <button id="start" class="primary" disabled>Start</button>
+        <button id="stop" class="danger" disabled>Stop</button>
+        <button id="clearSelection" disabled>Clear selection</button>
+      </div>
+
+      <section class="viewport" id="viewport">
+        <div class="empty" id="emptyState">
+          <h2>Select a source, capture a frame, then drag around the full row of five player cards.</h2>
+          <p>The selected row is split into five equal card regions. A card is marked dead when it becomes grey, low contrast, and washed out.</p>
+        </div>
+        <canvas id="frame" hidden></canvas>
+      </section>
+
+      <section class="status-grid" id="players"></section>
+    </main>
+  </div>
+
+  <script src="detector.js"></script>
+  <script>
+    const sourcesEl = document.getElementById('sources');
+    const canvas = document.getElementById('frame');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const emptyState = document.getElementById('emptyState');
+    const playersEl = document.getElementById('players');
+    const refreshButton = document.getElementById('refreshSources');
+    const captureButton = document.getElementById('capture');
+    const startButton = document.getElementById('start');
+    const stopButton = document.getElementById('stop');
+    const clearButton = document.getElementById('clearSelection');
+    const showOverlayButton = document.getElementById('showOverlay');
+    const hideOverlayButton = document.getElementById('hideOverlay');
+    const pollRateInput = document.getElementById('pollRate');
+    const fadeThresholdInput = document.getElementById('fadeThreshold');
+    const endpointInput = document.getElementById('endpoint');
+
+    let selectedSourceId = null;
+    let currentImage = null;
+    let selection = null;
+    let dragStart = null;
+    let pollTimer = null;
+    let lastPosted = '';
+
+    function setMessage(message, warn = false) {
+      emptyState.hidden = false;
+      emptyState.innerHTML = '<h2 class="' + (warn ? 'hint' : '') + '">' + message + '</h2>';
+    }
+
+    function canvasPoint(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (event.clientX - rect.left) * (canvas.width / rect.width),
+        y: (event.clientY - rect.top) * (canvas.height / rect.height),
+      };
+    }
+
+    function normalizeSelection(a, b) {
+      const x = Math.min(a.x, b.x);
+      const y = Math.min(a.y, b.y);
+      const width = Math.abs(a.x - b.x);
+      const height = Math.abs(a.y - b.y);
+      return { x, y, width, height };
+    }
+
+    function drawFrame() {
+      if (!currentImage) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(currentImage, 0, 0, canvas.width, canvas.height);
+
+      if (selection && selection.width > 4 && selection.height > 4) {
+        ctx.save();
+        ctx.strokeStyle = '#49d39f';
+        ctx.lineWidth = Math.max(2, canvas.width / 700);
+        ctx.setLineDash([10, 6]);
+        ctx.strokeRect(selection.x, selection.y, selection.width, selection.height);
+        ctx.setLineDash([]);
+
+        const regions = buildCardRegions(selection, 5);
+        ctx.strokeStyle = 'rgba(73, 211, 159, 0.72)';
+        for (const region of regions) {
+          ctx.strokeRect(region.x, region.y, region.width, region.height);
+        }
+        ctx.restore();
+      }
+    }
+
+    function renderPlayers(results = []) {
+      playersEl.innerHTML = '';
+      for (let i = 1; i <= 5; i += 1) {
+        const result = results.find((item) => item.player === i);
+        const dead = result ? result.dead : false;
+        const card = document.createElement('article');
+        card.className = 'player' + (dead ? ' dead' : '');
+        card.innerHTML = `
+          <strong>Player ${i}</strong>
+          <span class="state">${dead ? 'Dead' : 'Alive'}</span>
+          <span class="metric">Fade ${result ? Math.round(result.fadeScore * 100) : 0}%</span>
+          <span class="metric">Sat ${result ? result.saturation.toFixed(2) : '-'}</span>
+        `;
+        playersEl.appendChild(card);
+      }
+    }
+
+    function getSettings() {
+      return {
+        playerCount: 5,
+        fadeScoreThreshold: Number(fadeThresholdInput.value),
+      };
+    }
+
+    function analyzeCurrentFrame() {
+      if (!selection || !currentImage) return [];
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const results = analyzePlayerCards(imageData, selection, getSettings());
+      renderPlayers(results);
+
+      const aliveStatus = results.map((result) => !result.dead);
+      const payload = {
+        team1AliveStatus: aliveStatus,
+        team2AliveStatus: [true, true, true, true, true],
+        players: results.map((result) => ({
+          player: result.player,
+          alive: !result.dead,
+          fadeScore: result.fadeScore,
+          saturation: result.saturation,
+          contrast: result.contrast,
+        })),
+      };
+
+      window.hudApi.updateOverlay(payload);
+      return { results, payload };
+    }
+
+    async function postIfChanged(payload) {
+      const serialized = JSON.stringify(payload.team1AliveStatus);
+      if (serialized === lastPosted) return;
+      lastPosted = serialized;
+
+      try {
+        await fetch(endpointInput.value, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            team1AliveStatus: payload.team1AliveStatus,
+            team2AliveStatus: payload.team2AliveStatus,
+          }),
+        });
+      } catch (error) {
+        console.warn('Scoreboard POST failed:', error);
+      }
+    }
+
+    async function captureFrame() {
+      if (!selectedSourceId) return;
+      const frame = await window.hudApi.captureSource(selectedSourceId);
+      const image = new Image();
+      image.onload = () => {
+        currentImage = image;
+        canvas.width = frame.width;
+        canvas.height = frame.height;
+        canvas.hidden = false;
+        emptyState.hidden = true;
+        drawFrame();
+        clearButton.disabled = false;
+        startButton.disabled = !selection;
+      };
+      image.src = frame.dataUrl;
+    }
+
+    async function refreshSources() {
+      refreshButton.disabled = true;
+      sourcesEl.innerHTML = '';
+      try {
+        const sources = await window.hudApi.listSources();
+        for (const source of sources) {
+          const button = document.createElement('button');
+          button.className = 'source';
+          button.innerHTML = `<img alt="" src="${source.thumbnail}"><span>${source.name}</span>`;
+          button.addEventListener('click', () => {
+            selectedSourceId = source.id;
+            document.querySelectorAll('.source').forEach((item) => item.classList.remove('active'));
+            button.classList.add('active');
+            captureButton.disabled = false;
+          });
+          sourcesEl.appendChild(button);
+        }
+      } catch (error) {
+        setMessage(error.message, true);
+      } finally {
+        refreshButton.disabled = false;
+      }
+    }
+
+    canvas.addEventListener('pointerdown', (event) => {
+      if (!currentImage) return;
+      dragStart = canvasPoint(event);
+      selection = { x: dragStart.x, y: dragStart.y, width: 0, height: 0 };
+      canvas.setPointerCapture(event.pointerId);
+    });
+
+    canvas.addEventListener('pointermove', (event) => {
+      if (!dragStart) return;
+      selection = normalizeSelection(dragStart, canvasPoint(event));
+      drawFrame();
+    });
+
+    canvas.addEventListener('pointerup', (event) => {
+      if (!dragStart) return;
+      selection = normalizeSelection(dragStart, canvasPoint(event));
+      dragStart = null;
+      drawFrame();
+      startButton.disabled = selection.width < 10 || selection.height < 10;
+      analyzeCurrentFrame();
+    });
+
+    refreshButton.addEventListener('click', refreshSources);
+    captureButton.addEventListener('click', captureFrame);
+    clearButton.addEventListener('click', () => {
+      selection = null;
+      drawFrame();
+      startButton.disabled = true;
+    });
+    showOverlayButton.addEventListener('click', () => window.hudApi.showOverlay());
+    hideOverlayButton.addEventListener('click', () => window.hudApi.hideOverlay());
+
+    startButton.addEventListener('click', async () => {
+      if (!selection || !selectedSourceId) return;
+      await window.hudApi.showOverlay();
+      startButton.disabled = true;
+      stopButton.disabled = false;
+      pollTimer = setInterval(async () => {
+        await captureFrame();
+        setTimeout(async () => {
+          const analysis = analyzeCurrentFrame();
+          if (analysis.payload) await postIfChanged(analysis.payload);
+        }, 30);
+      }, Number(pollRateInput.value));
+    });
+
+    stopButton.addEventListener('click', () => {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      startButton.disabled = !selection;
+      stopButton.disabled = true;
+    });
+
+    fadeThresholdInput.addEventListener('input', analyzeCurrentFrame);
+    renderPlayers();
+    refreshSources();
+  </script>
+</body>
+</html>
