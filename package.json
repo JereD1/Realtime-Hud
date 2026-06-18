@@ -1,18 +1,22 @@
 {
-  "name": "health-capture",
+  "name": "realtime-hud",
   "version": "1.0.0",
-  "description": "Health bar capture → kill tracker signal sender",
+  "description": "Faded player card detection for realtime HUD status updates",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "NODE_ENV=development electron .",
+    "dev": "electron .",
     "build:win": "electron-builder --win",
     "build:mac": "electron-builder --mac"
   },
   "build": {
-    "appId": "com.healthcapture.app",
-    "productName": "Health Capture",
-    "files": ["src/**/*", "assets/**/*", "package.json"],
+    "appId": "com.realtimehud.app",
+    "productName": "Realtime HUD",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
     "win": {
       "target": "nsis",
       "signAndEditExecutable": false
